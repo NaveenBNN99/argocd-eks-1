@@ -8,15 +8,6 @@ provider "kubernetes" {
   config_path = "~/.kube/config"  # Update with your kubeconfig path
 }
 
-# Variables
-variable "argocd_chart_version" {
-  default = "3.1.2"  # Update to the desired ArgoCD chart version
-}
-
-variable "argocd_k8s_namespace" {
-  default = "argocd"  # Update to the desired namespace for ArgoCD
-}
-
 variable "eks_cluster_name" {
   default = "your-eks-cluster-name"  # Update with your EKS cluster name
 }
