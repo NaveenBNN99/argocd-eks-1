@@ -1,85 +1,65 @@
-#https://artifacthub.io/packages/helm/argo/argo-cd/3.1.2
-
 provider "helm" {
   kubernetes {
-    config_path = "~/.kube/config"
+    config_path = "~/.kube/config"  # Update with your kubeconfig path
   }
 }
 
 provider "kubernetes" {
-  config_path = "~/.kube/config"
+  config_path = "~/.kube/config"  # Update with your kubeconfig path
 }
 
-data "terraform_remote_state" "kubeconfig_file" {
-  backend = "local"
-
-  config = {
-    path = "./terraform.tfstate"
-  }
+# Variables
+variable "argocd_chart_version" {
+  default = "3.1.2"  # Update to the desired ArgoCD chart version
 }
 
-
-
-module "iam_assumable_role_oidc" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-assumable-role-with-oidc"
-  version = "5.2.0"
-
-  create_role                   = true
-  role_name                     = "k8s-argocd-admin"
-  provider_url                  = replace(data.terraform_remote_state.kubeconfig_file.outputs.cluster_oidc_issuer_url, "https://", "")
-  role_policy_arns              = []
-  oidc_fully_qualified_subjects = ["system:serviceaccount:${var.argocd_k8s_namespace}:argocd-server", "system:serviceaccount:${var.argocd_k8s_namespace}:argocd-application-controller"]
+variable "argocd_k8s_namespace" {
+  default = "argocd"  # Update to the desired namespace for ArgoCD
 }
 
-resource "kubernetes_namespace" "namespace_argocd" {
-  metadata {
-    name = var.argocd_k8s_namespace
-  }
+variable "eks_cluster_name" {
+  default = "your-eks-cluster-name"  # Update with your EKS cluster name
 }
 
+# Data source to fetch EKS cluster OIDC issuer URL
+data "aws_eks_cluster" "eks" {
+  name = var.eks_cluster_name
+}
+
+# Install ArgoCD using Helm
 resource "helm_release" "argocd" {
-
-  name       = var.argocd_chart_name
+  name       = "argocd"
   repository = "https://argoproj.github.io/argo-helm"
-  chart      = var.argocd_chart_name
+  chart      = "argo-cd"
   version    = var.argocd_chart_version
   namespace  = var.argocd_k8s_namespace
-  #values     = [file("${path.module}/values.yaml")]
 
-  ## Server params
+  values = [
+    # Update with additional values as needed
+  ]
+
   set {
     name  = "server.service.type"
     value = "LoadBalancer"
   }
 
-  set { # Manage Argo CD configmap (Declarative Setup)
-    name  = "server.configEnabled"
+  set {
+    name  = "server.config.enabled"
     value = "true"
   }
 
-  set { # Argo CD server name
+  set {
     name  = "server.name"
     value = "argocd-server"
   }
 
-  set { # Annotations applied to created service account
-    name  = "server.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.iam_assumable_role_oidc.iam_role_arn
-  }
-
-  set { # Define the application controller --app-resync - refresh interval for apps, default is 180 seconds
-    name  = "controller.args.appResyncPeriod"
-    value = "30"
-  }
-
-  set { # Define the application controller --repo-server-timeout-seconds - repo refresh timeout, default is 60 seconds
-    name  = "controller.args.repoServerTimeoutSeconds"
-    value = "15"
+  # Set the EKS OIDC issuer URL for ArgoCD
+  set {
+    name  = "server.oidc.config.issuer"
+    value = data.aws_eks_cluster.eks.identity.0.oidc.0.issuer
   }
 
   depends_on = [
-    kubernetes_namespace.namespace_argocd,
-    module.iam_assumable_role_oidc
+    data.aws_eks_cluster.eks,
   ]
-
 }
